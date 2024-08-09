@@ -22,6 +22,7 @@ MooseTame.parameters = {};
     const skillsLearnFromTaming = 'skills';
     const tamingRate = 'rate';
     const tamingHpRequirement = 'hp';
+    const tamingStateRequirement = 'state';
 
     const tamingRequirements = 'requirements';
     const tamingSuccess = 'success';
@@ -70,7 +71,14 @@ MooseTame.parameters = {};
 
     	console.log('requirements met');
 
-    	if (rollTameThrow(configuration['rate'])) {
+    	let modifier = 0;
+
+    	// Computes variations based on which states the enemy is afflicted with
+    	let stateBasedRolModfier = getStateModifier(troopEnemy);
+
+    	modifier += stateBasedRolModfier;
+
+    	if (rollTameThrow(configuration['rate'], modifier)) {
     		// @todo: make success message configurable in parameters
     		// @todo: add sound?
     		$gameMessage.add(`${caster.name()} tamed a ${enemy.name}!`);
@@ -85,14 +93,50 @@ MooseTame.parameters = {};
     	$gameMessage.add(`${caster.name()} failed to tame ${enemy.name}!`);
     }
 
-    function rollTameThrow(rate)
+    function rollTameThrow(rate, modifier)
     {
     	let roll = Math.floor(Math.random() * 100) + 1;
 
-    	console.log(`rate: ${rate}; rolled a ${roll}`);
+    	let modifiedRate = rate + modifier;
 
-    	return roll < rate;
+    	return roll < modifiedRate;
     }
+
+	function getStateModifier(enemy)
+	{
+		let rateModifier = 0;
+		let states = enemy.states();
+		let statesTamingNote;
+
+		for (state of states) {
+			statesTamingNote = getNoteLinesRelevantToTaming(state.note);
+			rateModifier += getRateModifierFromNoteLines(statesTamingNote);
+		}
+
+		console.log(rateModifier);
+
+		return rateModifier;
+	}
+
+
+	function getRateModifierFromNoteLines(linesRelevantToTaming)
+	{
+		console.log(linesRelevantToTaming);
+
+		for(line of linesRelevantToTaming) {
+			let [property,value] = line.split(':');
+
+			if (property.trim().toLowerCase() === tamingRate) {
+				console.log(value);
+
+				return parseInt(value);
+			}
+		}
+
+		return 0;		
+	}
+
+	
 
     function getDefaultConfiguration()
     {
@@ -121,11 +165,9 @@ MooseTame.parameters = {};
 
     function fillConfiguration(configuration, caster, enemy)
     {
-		let noteLines = enemy.note.split(/[\r\n]+/);
-		let openingTagIndex = noteLines.indexOf('<Tame>');
-		let closingTagIndex = noteLines.indexOf('</Tame>');
+		let linesRelevantToTaming = getNoteLinesRelevantToTaming(enemy.note);
 
-		if (!~openingTagIndex || !~closingTagIndex) {
+		if (linesRelevantToTaming.length === 0) {
 			configuration['tamable'] = false;
 
 			return configuration;
@@ -133,12 +175,10 @@ MooseTame.parameters = {};
 
 		configuration['tamable'] = true;
 
-		let linesRelevantToTaming = noteLines.slice(++openingTagIndex, closingTagIndex);
-
 		for(line of linesRelevantToTaming) {
 			let [property,value] = line.split(':');
 
-			switch (property.trim()) {
+			switch (property.trim().toLowerCase()) {
 				case skillsLearnFromTaming:
 					configuration = addSkillConfiguration(value, configuration, caster);
 					break;
@@ -148,11 +188,27 @@ MooseTame.parameters = {};
 				case tamingHpRequirement:
 					configuration = addHpRequirement(value, configuration);
 					break;
+				case tamingStateRequirement:
+					configuration = addStateRequirement(value, configuration, enemy);
+					break;
 
 			}
 		}
 
 		return configuration;
+    }
+
+    function getNoteLinesRelevantToTaming(note)
+    {
+    	let noteLines = note.split(/[\r\n]+/);
+		let openingTagIndex = noteLines.indexOf('<Tame>');
+		let closingTagIndex = noteLines.indexOf('</Tame>');
+
+		if (!~openingTagIndex || !~closingTagIndex) {
+			return [];
+		}
+
+		return linesRelevantToTaming = noteLines.slice(++openingTagIndex, closingTagIndex);
     }
 
     function addSkillConfiguration(value, configuration, caster) {
@@ -175,8 +231,6 @@ MooseTame.parameters = {};
     }
 
     function addHpRequirement(value, configuration) {
-    	configuration[tamingSuccess] = [];
-
     	let lowerBound,higherBound;
     	let includesLowerBound = value.indexOf('-');
 
@@ -193,6 +247,23 @@ MooseTame.parameters = {};
     		let hpPercentage = Math.round(enemy.hp/enemy.mhp*100);
 
     		return hpPercentage >= lowerBound && hpPercentage <= higherBound;
+    	});
+
+    	return configuration;
+    }
+
+    function addStateRequirement(value, configuration) {
+    	let states = value.split(',').map(s => s.trim());
+
+    	configuration[tamingRequirements].push(function(enemy) {
+    		let hasAllRequiredStates = true;
+
+	    	for (state of states) {
+	    		state = parseInt(state);
+	    		hasAllRequiredStates = hasAllRequiredStates && enemy.isStateAffected(state);
+	    	}
+
+    		return hasAllRequiredStates;
     	});
 
     	return configuration;
