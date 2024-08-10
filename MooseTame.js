@@ -74,9 +74,14 @@ MooseTame.parameters = {};
     	let modifier = 0;
 
     	// Computes variations based on which states the enemy is afflicted with
-    	let stateBasedRolModfier = getStateModifier(troopEnemy);
+    	let stateBasedRateModfier = getStateModifier(troopEnemy);
+    	let gearBasedRateModfier = getGearModifier(caster);
 
-    	modifier += stateBasedRolModfier;
+    	console.log(`stateBasedRateModfier = ${stateBasedRateModfier}`);
+    	console.log(`gearBasedRateModfier = ${gearBasedRateModfier}`);
+
+    	modifier += stateBasedRateModfier;
+    	modifier += gearBasedRateModfier;
 
     	if (rollTameThrow(configuration['rate'], modifier)) {
     		// @todo: make success message configurable in parameters
@@ -99,8 +104,32 @@ MooseTame.parameters = {};
 
     	let modifiedRate = rate + modifier;
 
+
+    	console.log(`Rolled ${roll} on rate ${modifiedRate}`);
+
     	return roll < modifiedRate;
     }
+
+	function getGearModifier(caster)
+	{
+		let rateModifier = 0;
+		let equippedItems = caster.equips().filter(e => e !== null);
+		let note, itemTamingNote;
+
+		console.log(equippedItems);
+
+		for (item of equippedItems) {
+			console.log(item);
+
+			itemTamingNote = getNoteLinesRelevantToTaming(item.note);
+			rateModifier += getRateModifierFromNoteLines(itemTamingNote);
+
+			console.log(`item rate: ${getRateModifierFromNoteLines(itemTamingNote)}`);
+		}
+
+
+		return rateModifier;
+	}
 
 	function getStateModifier(enemy)
 	{
@@ -113,22 +142,15 @@ MooseTame.parameters = {};
 			rateModifier += getRateModifierFromNoteLines(statesTamingNote);
 		}
 
-		console.log(rateModifier);
-
 		return rateModifier;
 	}
 
-
 	function getRateModifierFromNoteLines(linesRelevantToTaming)
 	{
-		console.log(linesRelevantToTaming);
-
 		for(line of linesRelevantToTaming) {
 			let [property,value] = line.split(':');
 
 			if (property.trim().toLowerCase() === tamingRate) {
-				console.log(value);
-
 				return parseInt(value);
 			}
 		}
