@@ -4,6 +4,64 @@
  * @author Metaphoric Moose
  * @version 0.1
  * @url https://github.com/MetaphoricalMoose
+ * 
+ * @param Tame Success SE
+ * 
+ * @param Audio success
+ * @parent Tame Success SE
+ * @text Success SE (Default Equip1)
+ * @type file
+ * @dir audio/se
+ * 
+ * @param pan success
+ * @parent Tame Success SE
+ * @type number
+ * @min -100
+ * @max 100
+ * @default 0
+ * 
+ * @param pitch success
+ * @parent Tame Success SE
+ * @type number
+ * @min -50
+ * @max 150
+ * @default 100
+ * 
+ * @param volume success
+ * @parent Tame Success SE
+ * @type number
+ * @min 0
+ * @max 100
+ * @default 90
+ *
+ * @param Tame Fail SE
+ *
+ * @param Audio fail
+ * @parent Tame Fail SE
+ * @text Fail SE (Default Equip1)
+ * @type file
+ * @dir audio/se
+ * 
+ * @param pan fail
+ * @parent Tame Fail SE
+ * @type number
+ * @min -100
+ * @max 100
+ * @default 0
+ * 
+ * @param pitch fail
+ * @parent Tame Fail SE
+ * @type number
+ * @min -50
+ * @max 150
+ * @default 100
+ * 
+ * @param volume fail
+ * @parent Tame Fail SE
+ * @type number
+ * @min 0
+ * @max 100
+ * @default 90
  *
  * ------------------------------------------------------------------------------
  * @help
@@ -18,6 +76,21 @@ MooseTame.parameters = {};
 
 (function() {
     const parameters = PluginManager.parameters('Moose_Tame');
+    const escapeSeIndex = 8;
+
+    MooseTame.parameters['success'] = {
+    	'name': parameters['Audio success'],
+    	'pan':parseInt( parameters['pan success']),
+    	'pitch': parseInt(parameters['pitch success']),
+    	'volume': parseInt(parameters['volume success']),
+    };
+
+    MooseTame.parameters['fail'] = {
+    	'name': parameters['Audio fail'],
+    	'pan': parseInt(parameters['pan fail']),
+    	'pitch': parseInt(parameters['pitch fail']),
+    	'volume': parseInt(parameters['volume fail']),
+    };
 
     const skillsLearnFromTaming = 'skills';
     const tamingRate = 'rate';
@@ -62,8 +135,10 @@ MooseTame.parameters = {};
 
     	if (!requirementAreMet(configuration[tamingRequirements], troopEnemy)) {
     		console.log('requirements not met');
+
+    		playFailSound();
+
 			// @todo: make fail message configurable in parameters
-    		// @todo: add sound?
     		$gameMessage.add(`${caster.name()} failed to tame ${enemy.name}!`);
 
     		return;
@@ -74,93 +149,46 @@ MooseTame.parameters = {};
     	let modifier = 0;
 
     	// Computes variations based on which states the enemy is afflicted with
-    	let stateBasedRateModfier = getStateModifier(troopEnemy);
+    	let enemyStateBasedRateModfier = getStateModifier(troopEnemy);
+    	let casterStateBasedRateModfier = getStateModifier(caster);
     	let gearBasedRateModfier = getGearModifier(caster);
+    	let classBasedRateModfier = getClassModifier(caster);
 
-    	console.log(`stateBasedRateModfier = ${stateBasedRateModfier}`);
-    	console.log(`gearBasedRateModfier = ${gearBasedRateModfier}`);
-
-    	modifier += stateBasedRateModfier;
+    	modifier += enemyStateBasedRateModfier;
     	modifier += gearBasedRateModfier;
+    	modifier += classBasedRateModfier;
+    	modifier += casterStateBasedRateModfier;
 
     	if (rollTameThrow(configuration['rate'], modifier)) {
     		// @todo: make success message configurable in parameters
-    		// @todo: add sound?
     		$gameMessage.add(`${caster.name()} tamed a ${enemy.name}!`);
+
+    		// @todo: add sound? check $dataSystem.sounds #8
+    		let initialEscapeSound = getSystemEscapeSound();
+
+    		console.log(initialEscapeSound);
+
+    		setEscapeSoundForTaming();
 
     		for(executable of configuration[tamingSuccess]) {
     			executable();
     		}
 
+    		restoreSystemEscapeSound(initialEscapeSound);
+
     		return;
     	}
+
+    	playFailSound();
 
     	$gameMessage.add(`${caster.name()} failed to tame ${enemy.name}!`);
     }
 
-    function rollTameThrow(rate, modifier)
-    {
-    	let roll = Math.floor(Math.random() * 100) + 1;
+    // ===========================
+    // === Taming Requirements ===
+    // ===========================
 
-    	let modifiedRate = rate + modifier;
-
-
-    	console.log(`Rolled ${roll} on rate ${modifiedRate}`);
-
-    	return roll < modifiedRate;
-    }
-
-	function getGearModifier(caster)
-	{
-		let rateModifier = 0;
-		let equippedItems = caster.equips().filter(e => e !== null);
-		let note, itemTamingNote;
-
-		console.log(equippedItems);
-
-		for (item of equippedItems) {
-			console.log(item);
-
-			itemTamingNote = getNoteLinesRelevantToTaming(item.note);
-			rateModifier += getRateModifierFromNoteLines(itemTamingNote);
-
-			console.log(`item rate: ${getRateModifierFromNoteLines(itemTamingNote)}`);
-		}
-
-
-		return rateModifier;
-	}
-
-	function getStateModifier(enemy)
-	{
-		let rateModifier = 0;
-		let states = enemy.states();
-		let statesTamingNote;
-
-		for (state of states) {
-			statesTamingNote = getNoteLinesRelevantToTaming(state.note);
-			rateModifier += getRateModifierFromNoteLines(statesTamingNote);
-		}
-
-		return rateModifier;
-	}
-
-	function getRateModifierFromNoteLines(linesRelevantToTaming)
-	{
-		for(line of linesRelevantToTaming) {
-			let [property,value] = line.split(':');
-
-			if (property.trim().toLowerCase() === tamingRate) {
-				return parseInt(value);
-			}
-		}
-
-		return 0;		
-	}
-
-	
-
-    function getDefaultConfiguration()
+function getDefaultConfiguration()
     {
     	let configuration = {};
     	configuration[tamingRate] = 100;
@@ -218,19 +246,6 @@ MooseTame.parameters = {};
 		}
 
 		return configuration;
-    }
-
-    function getNoteLinesRelevantToTaming(note)
-    {
-    	let noteLines = note.split(/[\r\n]+/);
-		let openingTagIndex = noteLines.indexOf('<Tame>');
-		let closingTagIndex = noteLines.indexOf('</Tame>');
-
-		if (!~openingTagIndex || !~closingTagIndex) {
-			return [];
-		}
-
-		return linesRelevantToTaming = noteLines.slice(++openingTagIndex, closingTagIndex);
     }
 
     function addSkillConfiguration(value, configuration, caster) {
@@ -311,5 +326,113 @@ MooseTame.parameters = {};
 		});
 
 		return configuration;
+    }
+
+    // ======================
+    // === Rate Computing ===
+    // ======================
+
+    function rollTameThrow(rate, modifier)
+    {
+    	let roll = Math.floor(Math.random() * 100) + 1;
+    	let modifiedRate = rate + modifier;
+
+    	return roll < modifiedRate;
+    }
+
+	function getGearModifier(caster)
+	{
+		let rateModifier = 0;
+		let equippedItems = caster.equips().filter(e => e !== null);
+		let note, itemTamingNote;
+
+		for (item of equippedItems) {
+			itemTamingNote = getNoteLinesRelevantToTaming(item.note);
+			rateModifier += getRateModifierFromNoteLines(itemTamingNote);
+		}
+
+		return rateModifier;
+	}
+
+	function getClassModifier(caster)
+	{
+		let rateModifier = 0;
+		let casterClass = caster.currentClass();
+		let classTamingNote = getNoteLinesRelevantToTaming(casterClass.note);
+
+		rateModifier += getRateModifierFromNoteLines(classTamingNote);
+
+		return rateModifier;
+	}
+
+	function getStateModifier(enemy)
+	{
+		let rateModifier = 0;
+		let states = enemy.states();
+		let statesTamingNote;
+
+		for (state of states) {
+			statesTamingNote = getNoteLinesRelevantToTaming(state.note);
+			rateModifier += getRateModifierFromNoteLines(statesTamingNote);
+		}
+
+		return rateModifier;
+	}
+
+	function getRateModifierFromNoteLines(linesRelevantToTaming)
+	{
+		let property,value;
+
+		for(line of linesRelevantToTaming) {
+			[property,value] = line.split(':');
+
+			if (property.trim().toLowerCase() === tamingRate) {
+				return parseInt(value);
+			}
+		}
+
+		return 0;		
+	}    
+
+    function getNoteLinesRelevantToTaming(note)
+    {
+    	let noteLines = note.split(/[\r\n]+/);
+		let openingTagIndex = noteLines.indexOf('<Tame>');
+		let closingTagIndex = noteLines.indexOf('</Tame>');
+
+		if (!~openingTagIndex || !~closingTagIndex) {
+			return [];
+		}
+
+		return linesRelevantToTaming = noteLines.slice(++openingTagIndex, closingTagIndex);
+    }
+
+    // =====================
+    // === Sound effects ===
+    // =====================
+
+    function playFailSound()
+    {
+    	if (MooseTame.parameters['fail']['name']) {
+	    	AudioManager.playSe(MooseTame.parameters['fail']);
+	    }
+    }
+
+    function getSystemEscapeSound()
+    {
+    	return $dataSystem.sounds[escapeSeIndex];
+    }
+
+    function restoreSystemEscapeSound(se)
+    {
+    	$dataSystem.sounds[escapeSeIndex] = se;
+    }
+
+    function setEscapeSoundForTaming()
+    {
+
+    	if (MooseTame.parameters['success']['name']) {
+    		$dataSystem.sounds[escapeSeIndex] = MooseTame.parameters['success'];
+    	}
     }
 })();
