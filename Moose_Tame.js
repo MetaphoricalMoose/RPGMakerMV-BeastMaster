@@ -63,6 +63,36 @@
  * @max 100
  * @default 90
  *
+ * @param Tame Strings
+ *
+ * @param No monster caught
+ * @parent Tame Strings
+ * @type text
+ *
+ * @param Monster not tamable
+ * @parent Tame Strings
+ * @type text
+ *
+ * @param Taming failed
+ * @parent Tame Strings
+ * @type text
+ *
+ * @param Taming success
+ * @parent Tame Strings
+ * @type text
+ *
+ * @param Skill learnt
+ * @parent Tame Strings
+ * @type text
+ *
+ * @param Replaces previous monster
+ * @parent Tame Strings
+ * @type text
+ *
+ * @param Gets new release
+ * @parent Tame Strings
+ * @type text
+ *
  * ------------------------------------------------------------------------------
  * @help
  * Coming Soon
@@ -78,6 +108,33 @@ MooseTame.parameters = {};
     const parameters = PluginManager.parameters('Moose_Tame');
     const escapeSeIndex = 8;
 
+    const skillsLearnFromTaming = 'skills';
+    const tamingRate = 'rate';
+    const tamingRateBonus = 'rateBonus';
+    const tamingHpRequirement = 'hp';
+    const tamingStateRequirement = 'state';
+    const onTamingFailRemoveState = 'onfailremovestate';
+    const onTamingFailAddState = 'onfailaddstate';
+    const baitRequirement = 'bait';
+    const baitBonus = 'baitbonus';
+    const releaseSkill = 'release';
+
+    const tamingRequirements = 'requirements';
+    const tamingSuccess = 'success';
+    const tamingFailure = 'failure';
+
+    const markBaitRequired = 'must';
+
+    const defaultStrings = {
+    	'nomonstercaught': "__actor__ hasn't caught any monster yet!", // ${caster.name()} hasn't caught any monster yet!
+    	'monsternottamable': "__enemy__ can't be tamed!", // ${enemy.name} can't be tamed!
+    	'tamingfailed': "__actor__ failed to tame __enemy__!", // ${caster.name()} failed to tame ${enemy.name}!
+    	'tamingsuccess': "__actor__ tamed a __enemy__!", // ${caster.name()} tamed a ${enemy.name}!
+    	'skilllearnt': "__actor__ learnt __skill__!", // ${caster.name()} learnt ${skill.name}!
+    	'replacespreviousmonster': "__enemy__ replaces previously caught monster.", // ${enemy.name} replaces previous caught monster.
+    	'getsnewrelease': "__actor__ can release __enemy__ later!", // ${caster.name()} can release ${enemy.name} later!
+    };
+
     MooseTame.parameters['success'] = {
     	'name': parameters['Audio success'],
     	'pan':parseInt( parameters['pan success']),
@@ -92,14 +149,15 @@ MooseTame.parameters = {};
     	'volume': parseInt(parameters['volume fail']),
     };
 
-    const skillsLearnFromTaming = 'skills';
-    const tamingRate = 'rate';
-    const tamingHpRequirement = 'hp';
-    const tamingStateRequirement = 'state';
-
-    const tamingRequirements = 'requirements';
-    const tamingSuccess = 'success';
-    const tamingFailure = 'failure';
+    MooseTame.parameters['strings'] = {
+    	'nomonstercaught': parameters['No monster caught'] ? parameters['No monster caught'] : defaultStrings['nomonstercaught'],
+    	'monsternottamable': parameters['Monster not tamable'] ? parameters['Monster not tamable'] : defaultStrings['monsternottamable'],
+    	'tamingfailed': parameters['Taming failed'] ? parameters['Taming failed'] : defaultStrings['tamingfailed'],
+    	'tamingsuccess': parameters['Taming success'] ? parameters['Taming success'] : defaultStrings['tamingsuccess'],
+    	'skilllearnt': parameters['Skill learnt'] ? parameters['Skill learnt'] : defaultStrings['skilllearnt'],
+    	'replacespreviousmonster': parameters['Replaces previous monster'] ? parameters['Replaces previous monster'] : defaultStrings['replacespreviousmonster'],
+    	'getsnewrelease': parameters['Gets new release'] ? parameters['Gets new release'] : defaultStrings['getsnewrelease'],
+    };
 
  	// Plugin commands
     let old_Game_Interpreter_pluginCommand = Game_Interpreter.prototype.pluginCommand;
@@ -109,23 +167,38 @@ MooseTame.parameters = {};
         if(command.toLowerCase() === 'moosetame') {
 			tame();
         }
+
+        if(command.toLowerCase() === 'moosetamerelease') {
+			release();
+        }
     }
 
-    function tame() {
+    function release()
+    {
+    	let caster = BattleManager._subject;
+    	let casterId = caster._actorId;
+
+		if (releaseMap[casterId]) {
+    		// Monster caught
+    		caster.forceAction(releaseMap[casterId].skill.id, -1); // -1 = random target
+    		releaseMap[casterId] = null; // monster was set lose, unset value
+    	} else {
+    		// No monster caught
+    		$gameMessage.add(MooseTame.parameters['strings']['nomonstercaught'].replace('__actor__', caster.name()));
+    	}
+    }
+
+    function tame()
+    {
     	let caster = BattleManager._subject;
     	let troopEnemy = getTroopEnemy()
     	let enemy = getLastTargetedEnemy();
-
     	let configuration = getDefaultConfiguration();
 
     	configuration = fillConfiguration(configuration, caster, enemy);
 
-    	console.log(configuration);
-
     	if (!configuration['tamable']) {
-    		// @todo: make non-tamable message configurable in parameters
-    		// @todo: add sound?
-    		$gameMessage.add(`${enemy.name} can't be tamed!`);
+    		$gameMessage.add(MooseTame.parameters['strings']['monsternottamable'].replace('__enemy__', enemy.name));
 
     		return;
     	}
@@ -133,18 +206,18 @@ MooseTame.parameters = {};
     	// This needs to be last item in call pile.
     	configuration = removeEnemyOnSuccessfulTaming(configuration, troopEnemy);
 
-    	if (!requirementAreMet(configuration[tamingRequirements], troopEnemy)) {
-    		console.log('requirements not met');
-
+    	if (!requirementAreMet(configuration[tamingRequirements], troopEnemy, caster)) {
     		playFailSound();
 
-			// @todo: make fail message configurable in parameters
-    		$gameMessage.add(`${caster.name()} failed to tame ${enemy.name}!`);
+			let message = MooseTame.parameters['strings']['tamingfailed'].replace('__actor__', caster.name()).replace('__enemy__', enemy.name);
+    		$gameMessage.add(message);
+
+    		for(executable of configuration[tamingFailure]) {
+    			executable(troopEnemy);
+    		}
 
     		return;
     	}
-
-    	console.log('requirements met');
 
     	let modifier = 0;
 
@@ -154,24 +227,22 @@ MooseTame.parameters = {};
     	let gearBasedRateModfier = getGearModifier(caster);
     	let classBasedRateModfier = getClassModifier(caster);
 
+    	modifier += configuration[baitBonus];
     	modifier += enemyStateBasedRateModfier;
     	modifier += gearBasedRateModfier;
     	modifier += classBasedRateModfier;
     	modifier += casterStateBasedRateModfier;
 
     	if (rollTameThrow(configuration['rate'], modifier)) {
-    		// @todo: make success message configurable in parameters
-    		$gameMessage.add(`${caster.name()} tamed a ${enemy.name}!`);
+			let message = MooseTame.parameters['strings']['tamingsuccess'].replace('__actor__', caster.name()).replace('__enemy__', enemy.name);
+    		$gameMessage.add(message);
 
-    		// @todo: add sound? check $dataSystem.sounds #8
     		let initialEscapeSound = getSystemEscapeSound();
-
-    		console.log(initialEscapeSound);
 
     		setEscapeSoundForTaming();
 
     		for(executable of configuration[tamingSuccess]) {
-    			executable();
+    			executable(caster);
     		}
 
     		restoreSystemEscapeSound(initialEscapeSound);
@@ -181,16 +252,38 @@ MooseTame.parameters = {};
 
     	playFailSound();
 
-    	$gameMessage.add(`${caster.name()} failed to tame ${enemy.name}!`);
+    	let message = MooseTame.parameters['strings']['tamingfailed'].replace('__actor__', caster.name()).replace('__enemy__', enemy.name);
+    	$gameMessage.add(message);
     }
+
+    // ===================
+    // === Persistance ===
+    // ===================
+
+	let releaseMap = {};
+    let _mooseTame_DataManager_makeSaveContents = DataManager.makeSaveContents;
+    let _mooseTame_DataManager_extractSaveContents = DataManager.extractSaveContents;
+
+    DataManager.makeSaveContents = function() {
+    	let contents = _mooseTame_DataManager_makeSaveContents.call(this);
+    	contents.releaseMap = releaseMap;
+
+    	return contents;
+    };
+
+    DataManager.extractSaveContents = function(contents) {
+		_mooseTame_DataManager_extractSaveContents.call(this, contents);
+		releaseMap = contents.releaseMap;
+	};
 
     // ===========================
     // === Taming Requirements ===
     // ===========================
 
-function getDefaultConfiguration()
+	function getDefaultConfiguration()
     {
     	let configuration = {};
+    	configuration[baitBonus] = 0;
     	configuration[tamingRate] = 100;
     	configuration[tamingRequirements] = [];
     	configuration[tamingSuccess] = [];
@@ -233,7 +326,7 @@ function getDefaultConfiguration()
 					configuration = addSkillConfiguration(value, configuration, caster);
 					break;
 				case tamingRate:
-					configuration['rate'] = value;
+					configuration['rate'] = parseInt(value);
 					break;
 				case tamingHpRequirement:
 					configuration = addHpRequirement(value, configuration);
@@ -241,28 +334,64 @@ function getDefaultConfiguration()
 				case tamingStateRequirement:
 					configuration = addStateRequirement(value, configuration, enemy);
 					break;
-
+				case onTamingFailRemoveState:
+					configuration = changeStatesOnFailure(value, configuration, enemy, onTamingFailRemoveState);
+					break;
+				case onTamingFailAddState:
+					configuration = changeStatesOnFailure(value, configuration, enemy, onTamingFailAddState);
+					break;
+				case baitRequirement:
+					configuration = addBaitRequirement(value, configuration, caster);
+					break;
+				case releaseSkill:
+					configuration = AddReleaseSkillConfiguration(value, configuration, caster, enemy);
+					break;
 			}
 		}
 
 		return configuration;
     }
 
-    function addSkillConfiguration(value, configuration, caster) {
-    	configuration[tamingSuccess] = [];
+    function addSkillConfiguration(value, configuration, caster)
+    {
+    	skillIds = value.split(',').map(e => parseInt(e.trim()));
 
-    	for(skillId of value) {
-    		let skill = $dataSkills[skillId];
+    	configuration[tamingSuccess].push(function (caster) {
+    		let skill;
 
-    		// Don't queue learning a skill that is already known
-    		if (!caster.isLearnedSkill(skillId)) {
-	    		configuration[tamingSuccess].push(function () {
+    		for(skillId of skillIds) {
+    			skill = $dataSkills[skillId];
+
+    			if (!caster.isLearnedSkill(skillId)) {
 	    			caster.learnSkill(skillId);
-	    			// @todo: make this string configurable in parameters
-	    			$gameMessage.add(`${caster.name()} learnt ${skill.name}!`);
-	    		});
+	    			let message = MooseTame.parameters['strings']['skilllearnt'].replace('__actor__', caster.name()).replace('__skill__', skill.name);
+	    			$gameMessage.add(message);
+	    		}
     		}
-    	}
+    	});
+
+    	return configuration;
+    }
+
+    function AddReleaseSkillConfiguration(value, configuration, caster, enemy)
+    {
+    	skillId = value.split(',')[0];
+
+    	let skill = $dataSkills[skillId];
+
+		configuration[tamingSuccess].push(function (caster) {
+			if (releaseMap[caster._actorId]) {
+				$gameMessage.add(MooseTame.parameters['strings']['replacespreviousmonster'].replace('__enemy__', enemy.name));
+			}
+
+			let message = MooseTame.parameters['strings']['getsnewrelease'].replace('__actor__', caster.name()).replace('__enemy__', enemy.name);
+			$gameMessage.add(message);
+
+			releaseMap[caster._actorId] = {
+				skill:skill,
+				enemy: enemy.id
+			};
+		});
 
     	return configuration;
     }
@@ -290,23 +419,96 @@ function getDefaultConfiguration()
     }
 
     function addStateRequirement(value, configuration) {
-    	let states = value.split(',').map(s => s.trim());
+    	let states = value.split(',').map(s => parseInt(s.trim()));
 
     	configuration[tamingRequirements].push(function(enemy) {
     		let hasAllRequiredStates = true;
 
 	    	for (state of states) {
-	    		state = parseInt(state);
 	    		hasAllRequiredStates = hasAllRequiredStates && enemy.isStateAffected(state);
 	    	}
 
-    		return hasAllRequiredStates;
+	    	return hasAllRequiredStates;
     	});
 
     	return configuration;
     }
 
-    function requirementAreMet(requirements, troopEnemy) {
+    function changeStatesOnFailure(value, configuration, enemy, action) {
+    	let states = value.split(',').map(s => parseInt(s.trim()));
+
+    	configuration[tamingFailure].push(function(enemy) {
+	    	for (state of states) {
+	    		action === onTamingFailAddState ? enemy.addState(state) : enemy.removeState(state);
+	    	}
+    	});
+
+    	return configuration;
+    }
+
+    function addBaitRequirement(value, configuration, caster) {
+    	// Remove empty slot data and weapons
+    	let equipment = {};
+    	let equips = caster.equips();
+    	let equipsKeys = equips.keys();
+
+    	for (key of equipsKeys) {
+    		if (equips[key]) {
+    			equips[key]['slotId'] = key;
+    		}
+    	}
+
+    	let equippedItems = equips.filter(e => e !== null && e.atypeId !== undefined);
+
+    	let enemyBaitValues = value.split(',').map(e => e.trim());
+    	let baitIsMarkedRequired = enemyBaitValues.contains(markBaitRequired);
+    	let enemyBaitIds = enemyBaitValues.filter(e => e !== markBaitRequired).map(e => parseInt(e));
+    	let effectiveBait = equippedItems.filter(e => enemyBaitIds.contains(e.id));
+
+
+    	let baitNote, property, confValue;
+
+    	let slotsToClear = [];
+
+    	for (bait of effectiveBait) {
+    		baitNote = getNoteLinesRelevantToTaming(bait.note);
+    		slotsToClear.push(bait.slotId);
+
+			for(line of baitNote) {
+				[property,confValue] = line.split(':');
+
+				if (property.trim().toLowerCase() === baitBonus) {
+					configuration[baitBonus] += parseInt(confValue);
+				}
+			}
+    	}
+
+    	if (baitIsMarkedRequired) {
+    		configuration[tamingRequirements].push(function(troopEnemy, caster) {
+    			let equippedItemsId = caster.equips()
+    				.filter(e => e !== null && e.atypeId !== undefined)
+    				.map(e => parseInt(e.id));
+
+    			let effectiveBaits = equippedItemsId.filter(e => enemyBaitIds.contains(e));
+
+    			return effectiveBait.length > 0;
+    		});
+    	}		
+
+    	configuration[tamingSuccess].push(function(actor) {
+    		let item;
+
+    		for(slotId of slotsToClear) {
+    			item = actor.equips()[slotId];
+
+    			actor.discardEquip(item);
+    		}
+    	});
+
+    	return configuration;
+    }
+
+    function requirementAreMet(requirements, troopEnemy, caster) {
     	if (requirements.length === 0) {
     		return true;
     	}
@@ -314,7 +516,7 @@ function getDefaultConfiguration()
     	let reqsPile = true;
 
     	for(requirementChech of requirements) {
-    		reqsPile = reqsPile && requirementChech(troopEnemy);
+    		reqsPile = reqsPile && requirementChech(troopEnemy, caster);
     	}
 
     	return reqsPile;
