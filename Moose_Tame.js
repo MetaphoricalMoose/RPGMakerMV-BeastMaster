@@ -1,8 +1,8 @@
 /*:
  * ------------------------------------------------------------------------------
- * @plugindesc v0.1 - Tame wild enemies and use their powers!
+ * @plugindesc v1.0 - Tame wild enemies and use their powers!
  * @author Metaphoric Moose
- * @version 0.1
+ * @version 1.0
  * @url https://github.com/MetaphoricalMoose
  * 
  * @param Tame Success SE
@@ -95,7 +95,324 @@
  *
  * ------------------------------------------------------------------------------
  * @help
- * Coming Soon
+ *
+ * This plugin adds mechanics to catch wild monster. You can define skills
+ * that the user can learn from them, or use as a one-time release skill.
+ *
+ * If you need an example of the full set-up, there a demo/showcase is available
+ * on github (https://github.com/MetaphoricalMoose/RPGMakerMV-BeastMaster)
+ *
+ * To make a monster tamable, you need to add a notetag to that specific monster,
+ * to defined under what conditions is can be tamed and what happens when it's
+ * successfully tamed.
+ * 
+ * First, the tame skill set up. This is done by creating a skill targeting one
+ * single enemy, and making it call a common event that runs the "MooseTame"
+ * command. That's it. We'll call that skill "Tame" in this help file.
+ * 
+ * From there, using the Tame skill on a monster without the notetag will simply
+ * output a message to warn you this enemy can't be tamed.
+ * 
+ * To mark an enemy as tamable, the minimal notetag is:
+ * <Tame>
+ * </Tame>
+ * 
+ * Since this defined no taming requirements, success rate, or outcome, using
+ * the Tame skill will always succeed and remove the enemy from the battlefield.
+ * Under the hood, it forces it to flee, therefore voiding it's drops (XP, gold,
+ * loot). But we can make this more interesting.
+ * 
+ * ------------------------------------------------------------------------------
+ * Taming process
+ * ------------------------------------------------------------------------------
+ * 
+ * When the Tame skill is used, the plugin will do these steps in this order:
+ * 1. check if the enemy is tamable (see above)
+ * 2. check if the taming requirements are met (see below)
+ * 3. compute the taming modifier (see below)
+ * 4. roll a 1d100 die (see below)
+ * 5a. In case of success, apply successful outcome (see below)
+ * 5b. In case of failure, apply failed outcome (see below)
+ * 
+ * ------------------------------------------------------------------------------
+ * Taming requirements
+ * ------------------------------------------------------------------------------
+ * 
+ * The first thing the MooseTame command will check, if whether the taming
+ * requirements are met. They include: 
+ * - the enemy being in a specific HP% range.
+ * - the enemy being affected by one or more state.
+ * - a specific bait being equipped (more on this on the bait section).
+ * 
+ * # HP range
+ * 
+ * To add an HP range requirement, your note tag can look like this:
+ * 
+ * <Tame>
+ *  hp: 50
+ * </Tame>
+ * 
+ * In this example (only one number defined), it means Tame will automatically
+ * fail unless the enemy's current HP is above 50% of its max HP.
+ * 
+ * You can also use to numbers if you ned to be more precise.
+ * 
+ * <Tame>
+ *  hp: 25-75
+ * </Tame>
+ * 
+ * With this notetag, Taming will fail unless the enemy is between 25% and 75%
+ * of its max HP.
+ * 
+ * # States
+ * 
+ * If you want to make it so an enemy can't be tamed unless it's affected by a
+ * specific state, you can defined its notetag like this:
+ * 
+ * <Tame>
+ *  state: 10
+ * </Tame>
+ * 
+ * Assuming state with the 10 is Sleep (like by default), then Taming will
+ * fail unless the enemy is asleep.
+ * You can add multiple states if you seperate them with commas
+ * 
+ * ex: state: 4,10
+ * 
+ * Note that this will make BOTH states required for taming.
+ * 
+ * # Bait
+ *
+ * Bait has its own section below. For the purpose of the requirements section, 
+ * we'll only give an example of a configuration to make it mandatory that
+ * the actor using Tame has a bait (= an armor with a notetag) equipped:
+ * 
+ * <Tame>
+ *  bait: 4, must
+ * </Tame>
+ * 
+ * With this notetag, the actor must have the armor with id 4 equipped when
+ * using Tame for it to have a chance to succeed. The keyword "must" being the
+ * part that transforms bait from a bonus to a requirement.
+ *
+ * You can define a comma-separated list of bait, and if you do so, any will
+ * work. For example:
+ * 
+ * <Tame>
+ *  bait: 4,5 must
+ * </Tame>
+ * 
+ * That way, have either bait with with armor id 4 or 5 will work fine.
+ * 
+ * ------------------------------------------------------------------------------
+ * Taming rate
+ * ------------------------------------------------------------------------------
+ * 
+ * The taming rate is the odds of Tame succeeding after when the requiements are
+ * met. If they're not, the MooseTame command won't even get to this point.
+ * 
+ * By default, the taming rate is 100, meaning it will always succeed (again,
+ * provided the requirements are met). You can modify this value this way:
+ * 
+ * <Tame>
+ *  rate: 80
+ * </Tame>
+ * 
+ * Now we have a taming base rate of 80%.
+ * 
+ * When the plugin rolls the 1d100 die, Taming will work if the roll is inferior
+ * or equal to the final rate. The rate can be further influenced with modifiers.
+ *
+ * # Taming bonuses
+ *
+ * These modifiers are notetags on actor classes, armors, and states, and they
+ * all look like this:
+ * 
+ * <Tame>
+ *  rate: +n
+ * </Tame>
+ * 
+ * With n being the bonus you want to apply to the base rate.
+ * Here are a few examples:
+ * 
+ * 1. You want a class to be better at taming that the others, then use this note
+ * on that class.
+ * 2. Sleeping enemies will be easier caught, right? Then use this note on the
+ * sleep state (state bonus and state requirements are two different things!).
+ * 3. You have a pheromone spray that adds a state to the actor, then add this
+ * note to the "pheromoned" state.
+ * 4. There is an accessory or armor that increases chances of taming? Then use
+ * that note on this state as well. (equipment bonus and bait are two different
+ * things!)
+ * 
+ * To sum up all that, let's say we have an enemy with a base 50 taming rate.
+ * Our actor has the Beastmaster that gives +10 to the rate. They're wearing a
+ * Hypnocrown accessroy that gives +8 to the rate, and under the "pheromoned"
+ * state that gives +3.
+ * The enemy is under the "Sleep" state that gives +5.
+ * 
+ * The final rate will there be 50 + 10 + 8 + 3 + 5 = 76.
+ * 
+ * So with the bonuses we need to roll 76 or less, up from 50.
+ * 
+ * On the contraty, if you want to define classes, states or equipments that
+ * hinder taming, just give a negative value to n. Here are a few examples:
+ * 
+ * 1. Using an item that halves encounters, also gives a -50 rate.
+ * 2. The enemy is enraged (berserk) state and cannot be tamed, give the state
+ * a -100 (or -9000, go wild), so make the rate so low it's won't go through.
+ * Keep in mind that if the base rate is 100 and you give the enraged state -100,
+ * Additional bonus may still make the final rate above 0.
+ * 
+ * # Bait
+ * 
+ * Baits are special kinds of armor related bonuses. The difference between a
+ * bait and a bonus armor are:
+ * - the bait is consumed upon successful taming
+ * - not all baits apply to every enemy
+ * 
+ * A bait needs to be configured in two places: in the enemy's note and in the
+ * armor's note. Let's start with the enemy.
+ * 
+ * <Tame>
+ *  bait: 4
+ * </Tame>
+ * 
+ * This simply defines that if the actor has the bait with armor id 4 equipped,
+ * the bonus defined in the bait wil apply. Enemy that don't react to bait 4
+ * will not benefit from the bonus.
+ * 
+ * And now the bait note:
+ * 
+ * <Tame>
+ *  baitBonus: 10
+ * </Tame>
+ * 
+ * Enemies reacting to bait 4 will get a 10 bonus to their taming rate.
+ * 
+ * ------------------------------------------------------------------------------
+ * Taming Outcome
+ * ------------------------------------------------------------------------------
+ * 
+ * Outcomes come in two categories: the good ones on success and the bad ones
+ * on failure.
+ * 
+ * There is only one outcome that will happen no matter what: when an enemy is
+ * successfully tamed, it is removed from the battle and yields no XP, gold or
+ * items.
+ *
+ * # Good: Skill learning
+ * 
+ * If you want to teach a new skill or more to your actor when a monster is
+ * successfully tame, you can define this notetag on the enemy:
+ * 
+ * <Tame>
+ *  skills: 5
+ * </Tame>
+ * 
+ * If taming succeeds, the actor will learn skill number 5. Note that you can
+ * define several skills in a comma-separated list. Ex: 5,6
+ * 
+ * # Good: Keep enemy to release later
+ * 
+ * You can also "keep" the enemy stored to release it later in battle. First,
+ * you ned to create a skill that will be executed when the enemy is released,
+ * and then configure the notetag of the enemy like this:
+ * 
+ * <Tame>
+ *  release: 6
+ * </Tame>
+ * 
+ * The you need to create a release skill. We'll call it "Release". It needs
+ * to call a common event that call the plugin command "MooseTameRelease".
+ * 
+ * Using the Release skill without having tamed an enemy first will result
+ * in nothing happening.
+ * Taming an enemy with a release note will replace the enemy previously caught.
+ * 
+ * When using a release skill, it will target one random enemy. You will then
+ * have to catch another enemy to use release again.
+ * 
+ * Releases are stored on a per-actor basis, so if you have several actors
+ * capable of taming, they can each "store" their own enemy.
+ * 
+ * # Bad: Gaining state
+ * 
+ * If you want to define an enemy that doesn't like someone trying to tame them,
+ * and want to add an enraged state to them when taming fails, add this note to
+ * the enemy:
+ *
+ * <Tame>
+ *  rate: 10
+ *  onFailAddState: 7
+ * </Tame>
+ * 
+ * If you attempt to tame this enemy and fail (the rate isn't mandatory here,
+ * it's just to give an example that has an actual chance of failing), then the
+ * enemy will gain state 7 (Rage in default RM MV).
+ * 
+ * # Bad: Losing state
+ * 
+ * You can also go the other way and clear state that benefit you when you fail
+ * at taming an enemy. If you want an enemy to wake up when you fail at taming
+ * it, use this note:
+ * 
+ * <Tame>
+ *  rate: 10
+ *  onFailRemoveState: 10
+ * </Tame>
+ * 
+ * If you attempt to tame this enemy and fail (same thing for the rate), if the
+ * enemy was sleeping (default state 10), it will wake up.
+ * 
+ * ------------------------------------------------------------------------------
+ * 
+ * To sum up, here is what a full notetag can look like:
+ * 
+ * <Tame>
+ *  rate: 50
+ *  hp: 15
+ *  state: 5,10
+ *  bait: 4,must
+ *  skills: 15
+ *  onFailAddState: 7
+ *  onFailRemoveState: 10
+ * </Tame>
+ * 
+ * To tame this enemy, you will have to:
+ * - bring it under 15% of its max HP
+ * - apply stated 5 (Blind) and 10 (Sleep) to it
+ * - have your actor equipped with bait number 4
+ * 
+ * And only then you have a 50% of taming it (before bonuses).
+ * 
+ * If it succeeds, the actor will learn skill 15, and the enemy will be
+ * removed from the battle.
+ * If it fails, the enemy will lose state 10 and gain state 7.
+ * 
+ * ------------------------------------------------------------------------------
+ * Parameters
+ * ------------------------------------------------------------------------------
+ * 
+ * You can tweak the plugin to your likings with a few parameters:
+ * 
+ * Tame Success SE: configure the sound you want to play when taming succeeds
+ * Tame Fail SE: configure the sound you want to play when taming fails
+ * Tame Strings: translate the plugin's strings to your game's language.
+ * 
+ * When translating the strings, anything between double underscore is something
+ * that will be replaced, so don't change those. For example, when an enemy
+ * cannot be tamed, the default string is:
+ *
+ * "__enemy__ can't be tamed!"
+ *
+ * If you want to translate it and place the "__enemy__" placeholder where needed.
+ *
+ * ------------------------------------------------------------------------------
+ * Terms of Use
+ * ------------------------------------------------------------------------------
+ * - Free for use in non-commercial projects with credits to MetaphoricalMoose :)
+ * - Do not use in commercial projects
  */
 
 var Imported = Imported || {};
@@ -251,6 +568,10 @@ MooseTame.parameters = {};
     	}
 
     	playFailSound();
+
+    	for(executable of configuration[tamingFailure]) {
+    		executable(troopEnemy);
+    	}
 
     	let message = MooseTame.parameters['strings']['tamingfailed'].replace('__actor__', caster.name()).replace('__enemy__', enemy.name);
     	$gameMessage.add(message);
@@ -435,11 +756,15 @@ MooseTame.parameters = {};
     }
 
     function changeStatesOnFailure(value, configuration, enemy, action) {
-    	let states = value.split(',').map(s => parseInt(s.trim()));
-
     	configuration[tamingFailure].push(function(enemy) {
+    		let states = value.split(',').map(s => parseInt(s.trim()));
+
 	    	for (state of states) {
-	    		action === onTamingFailAddState ? enemy.addState(state) : enemy.removeState(state);
+	    		if (action === onTamingFailAddState) {
+	    			enemy.addState(state);
+	    		} else {
+	    			enemy.removeState(state);
+	    		}
 	    	}
     	});
 
@@ -539,7 +864,7 @@ MooseTame.parameters = {};
     	let roll = Math.floor(Math.random() * 100) + 1;
     	let modifiedRate = rate + modifier;
 
-    	return roll < modifiedRate;
+    	return roll <= modifiedRate;
     }
 
 	function getGearModifier(caster)
