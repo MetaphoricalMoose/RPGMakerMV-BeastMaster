@@ -696,9 +696,7 @@ MooseTame.parameters = {};
 
     function AddReleaseSkillConfiguration(value, configuration, caster, enemy)
     {
-    	skillId = value.split(',')[0];
-
-    	let skill = $dataSkills[skillId];
+    	let skill = $dataSkills[value];
 
 		configuration[tamingSuccess].push(function (caster) {
 			if (releaseMap[caster._actorId]) {
